@@ -638,7 +638,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device):
+def evaluate(data_loader, model, device, is_beit=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -654,7 +654,11 @@ def evaluate(data_loader, model, device):
         # compute output
         with torch.cuda.amp.autocast():
             output = model(images)
-            output = model.module.head(output)
+            if is_beit:
+                xiao = 0
+            else:
+                output = model.module.head(output)
+            # output = model.module.head(output)
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -1060,7 +1064,7 @@ def main(args):
                 loss_scaler.load_state_dict(checkpoint['scaler'])
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, device)
+        test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights))
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         return
 
@@ -1082,7 +1086,7 @@ def main(args):
         lr_scheduler.step(epoch)
 
         if epoch % 50 == 0 or epoch == args.epochs - 1:
-            test_stats = evaluate(data_loader_val, model, device)
+            test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights))
             print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
 
             if args.output_dir and (test_stats["acc1"] >= max_accuracy):
