@@ -24,6 +24,7 @@ import sys
 import copy
 import scipy.io as scio
 import models
+import zhirong
 import utils
 
 from pathlib import Path
@@ -590,7 +591,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
-                    set_training_mode=True, is_beit=False):
+                    set_training_mode=True, is_beit=False, is_zhirong=False):
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -606,6 +607,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
         with torch.cuda.amp.autocast():
             output = model(samples)
+            if is_zhirong:
+                output = output[0]
             if is_beit:
                 outputs = output
             else:
@@ -638,7 +641,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, is_beit=False):
+def evaluate(data_loader, model, device, is_beit=False, is_zhirong=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -654,6 +657,8 @@ def evaluate(data_loader, model, device, is_beit=False):
         # compute output
         with torch.cuda.amp.autocast():
             output = model(images)
+            if is_zhirong:
+                output = output[0]
             if is_beit:
                 xiao = 0
             else:
@@ -749,6 +754,10 @@ def main(args):
             attn_drop_rate=args.attn_drop_rate,
         )
         embed_dim = model.num_features
+    elif 'zhirong' in args.pretrained_weights:
+        model = zhirong.__dict__[args.arch](use_mean=False, drop_path_rate=0.1, attn_drop_rate=0., init_values=0.1,
+                                            use_shared_rel_pos_bias=False, depth_token_only=2)
+        embed_dim = 768
     elif 'beit' in args.pretrained_weights:
         args_model = 'beit_base_patch16_224'
         args_nb_classes = 1000
@@ -1064,7 +1073,8 @@ def main(args):
                 loss_scaler.load_state_dict(checkpoint['scaler'])
 
     if args.eval:
-        test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights))
+        test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights),
+                              is_zhirong=('zhirong' in args.pretrained_weights),)
         print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
         return
 
@@ -1081,12 +1091,14 @@ def main(args):
             args.clip_grad, model_ema, mixup_fn,
             set_training_mode=args.finetune == '',  # keep in eval mode during finetuning
             is_beit=('beit' in args.pretrained_weights),
+            is_zhirong=('zhirong' in args.pretrained_weights),
         )
 
         lr_scheduler.step(epoch)
 
         if epoch % 50 == 0 or epoch == args.epochs - 1:
-            test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights))
+            test_stats = evaluate(data_loader_val, model, device, is_beit=('beit' in args.pretrained_weights),
+                                  is_zhirong=('zhirong' in args.pretrained_weights), )
             print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
 
             if args.output_dir and (test_stats["acc1"] >= max_accuracy):
