@@ -1081,6 +1081,8 @@ def main(args):
     print(f"Start training for {args.epochs} epochs")
     start_time = time.time()
     max_accuracy = 0.0
+    last_accuracy = 0.0
+    accuracy_drop_count = 0
     for epoch in range(args.start_epoch, args.epochs):
         if True: #args.distributed:
             data_loader_train.sampler.set_epoch(epoch)
@@ -1115,6 +1117,12 @@ def main(args):
                         'args': args,
                     }, checkpoint_path)
 
+            if last_accuracy > test_stats["acc1"]:
+                accuracy_drop_count = accuracy_drop_count + 1
+            else:
+                accuracy_drop_count = 0
+            last_accuracy = test_stats["acc1"]
+
             max_accuracy = max(max_accuracy, test_stats["acc1"])
             print(f'Max accuracy: {max_accuracy:.2f}%')
 
@@ -1126,6 +1134,9 @@ def main(args):
             if args.output_dir and utils.is_main_process():
                 with (output_dir / "log.txt").open("a") as f:
                     f.write(json.dumps(log_stats) + "\n")
+
+            if accuracy_drop_count >= 2:
+                break
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
