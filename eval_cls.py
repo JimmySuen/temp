@@ -202,6 +202,7 @@ def get_args_parser():
     parser.add_argument("--finetune_head_layer", default=0, type=int, help="which head layer to start to finetune")
     parser.add_argument("--out_dim", default=8192, type=int, help="only useful when finetune all the projection layers")
 
+    parser.add_argument("--drop_count_thre", default=2, type=int, help="drop_count_thre")
 
     return parser
 
@@ -1135,7 +1136,7 @@ def main(args):
                 with (output_dir / "log.txt").open("a") as f:
                     f.write(json.dumps(log_stats) + "\n")
 
-            if accuracy_drop_count >= 2:
+            if accuracy_drop_count >= args.drop_count_thre:
                 break
 
     total_time = time.time() - start_time
