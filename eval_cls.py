@@ -260,8 +260,8 @@ class ClassProjHead(nn.Module):
     def __init__(self, in_dim, out_dim, cls_dim, norm=None, act='gelu', nlayers=3, 
                  hidden_dim=2048, bottleneck_dim=256, finetune_layer=1, **kwargs):
         super().__init__(**kwargs)
-        if norm is not None:
-            norm = self._build_norm(norm) #nn.Identity()
+        # if norm is not None:
+        #     norm = self._build_norm(norm) #nn.Identity()
         act = self._build_act(act) #nn.Identity()
 
         assert (nlayers >= finetune_layer) and (finetune_layer >= 1)
@@ -277,14 +277,16 @@ class ClassProjHead(nn.Module):
             layers = [nn.Linear(in_dim, hidden_dim)]
             cls_in_dim = hidden_dim
             if norm is not None:
-                layers.append(norm)
+                norm_ = self._build_norm(norm, hidden_dim)  # nn.Identity()
+                layers.append(norm_)
             layers.append(act)
         
             for l in range(nlayers - 2):
                 if finetune_layer >= l + 2:
                     layers.append(nn.Linear(hidden_dim, hidden_dim))
                     if norm is not None:
-                        layers.append(norm)
+                        norm_ = self._build_norm(norm, hidden_dim)  # nn.Identity()
+                        layers.append(norm_)
                     layers.append(act)
 
         if finetune_layer == nlayers:
@@ -944,6 +946,8 @@ def main(args):
                 embed_dim,
                 args.out_dim,
                 args.nb_classes,
+                nlayers=4,
+                norm='ln',
                 finetune_layer=args.finetune_head_layer)
         else:
             head = nn.Linear(embed_dim, args.nb_classes) if args.nb_classes > 0 else nn.Identity()
@@ -955,6 +959,9 @@ def main(args):
             model.head.bias.data.mul_(args.init_scale)
         utils.load_pretrained_weights(model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size)
     model.cuda()
+
+    print("show model: #################################")
+    print(model)
 
     if args.finetune:
         if args.finetune.startswith('https'):
