@@ -258,7 +258,7 @@ def load_state_dict(model, state_dict, prefix='', ignore_missing="relative_posit
 
 class ClassProjHead(nn.Module):
     def __init__(self, in_dim, out_dim, cls_dim, norm=None, act='gelu', nlayers=3, 
-                 hidden_dim=2048, bottleneck_dim=256, finetune_layer=1, **kwargs):
+                 hidden_dim=2048, bottleneck_dim=256, finetune_layer=1, with_bias=True, **kwargs):
         super().__init__(**kwargs)
         # if norm is not None:
         #     norm = self._build_norm(norm) #nn.Identity()
@@ -270,11 +270,11 @@ class ClassProjHead(nn.Module):
         nlayers = max(nlayers, 1)
         if nlayers == 1:
             if bottleneck_dim > 0:
-                layers = [nn.Linear(in_dim, bottleneck_dim)]
+                layers = [nn.Linear(in_dim, bottleneck_dim, with_bias)]
             else:
-                layers = [nn.Linear(in_dim, out_dim)]
+                layers = [nn.Linear(in_dim, out_dim, with_bias)]
         else:
-            layers = [nn.Linear(in_dim, hidden_dim)]
+            layers = [nn.Linear(in_dim, hidden_dim, with_bias)]
             cls_in_dim = hidden_dim
             if norm is not None:
                 norm_ = self._build_norm(norm, hidden_dim)  # nn.Identity()
@@ -283,7 +283,7 @@ class ClassProjHead(nn.Module):
         
             for l in range(nlayers - 2):
                 if finetune_layer >= l + 2:
-                    layers.append(nn.Linear(hidden_dim, hidden_dim))
+                    layers.append(nn.Linear(hidden_dim, hidden_dim, with_bias))
                     if norm is not None:
                         norm_ = self._build_norm(norm, hidden_dim)  # nn.Identity()
                         layers.append(norm_)
@@ -291,11 +291,11 @@ class ClassProjHead(nn.Module):
 
         if finetune_layer == nlayers:
             if bottleneck_dim > 0:
-                layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+                layers.append(nn.Linear(hidden_dim, bottleneck_dim, with_bias))
                 self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
                 self.last_layer.weight_g.data.fill_(1)
             else:
-                layers.append(nn.Linear(hidden_dim, out_dim))
+                layers.append(nn.Linear(hidden_dim, out_dim, with_bias))
             cls_in_dim = out_dim
 
         self.mlp = nn.Sequential(*layers)
@@ -939,6 +939,27 @@ def main(args):
     if 'beit' in args.pretrained_weights:
         # 'beit' already have head and weights loaded
         print('beit')
+    elif 'zhirong' in args.pretrained_weights:
+        # projection head
+        if args.finetune_head_layer > 0:
+            head = ClassProjHead(
+                embed_dim,
+                args.out_dim,
+                args.nb_classes,
+                with_bias=False,
+                hidden_dim=4096,
+                nlayers=4,
+                norm='ln',
+                finetune_layer=args.finetune_head_layer)
+        else:
+            head = nn.Linear(embed_dim, args.nb_classes) if args.nb_classes > 0 else nn.Identity()
+        # load weights to evaluate
+        model.head = head
+        model.head.apply(model._init_weights)
+        if args.init_scale != 1.0:
+            model.head.weight.data.mul_(args.init_scale)
+            model.head.bias.data.mul_(args.init_scale)
+        utils.load_pretrained_weights(model, args.pretrained_weights, args.checkpoint_key, args.arch, args.patch_size)
     else:
         # projection head
         if args.finetune_head_layer > 0:
