@@ -102,6 +102,8 @@ def get_args_parser():
                         help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
     parser.add_argument('--layer_decay', type=float, default=1.0)
 
+    parser.add_argument('--lrhead', type=float, default=1, help='lrhead')
+
     parser.add_argument('--decay-epochs', type=float, default=30, metavar='N',
                         help='epoch interval to decay LR')
     parser.add_argument('--warmup-epochs', type=int, default=5, metavar='N',
@@ -598,6 +600,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     model.train(set_training_mode)
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr_head', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
@@ -637,6 +640,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        metric_logger.update(lr_head=optimizer.param_groups[-1]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -1044,7 +1048,15 @@ def main(args):
 
     linear_scaled_lr = args.lr * args.batch_size * utils.get_world_size() / 512.0
     args.lr = linear_scaled_lr
-    optimizer = create_optimizer(args, model_without_ddp) 
+    # optimizer = create_optimizer(args, model_without_ddp)
+    optimizer = create_optimizer(args, [
+        {"params": model_without_ddp.patch_embed.parameters(), "lr": args.lr},
+        {"params": model_without_ddp.blocks.parameters()},
+        {"params": model_without_ddp.blocks_token.parameters(), "lr": args.lr},
+        {"params": model_without_ddp.norm.parameters(), "lr": args.lr},
+        {"params": model_without_ddp.head.parameters(), "lr": args.lr * args.lrhead},
+    ])
+
     loss_scaler = NativeScaler()
 
     lr_scheduler, _ = create_scheduler(args, optimizer)
