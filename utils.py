@@ -120,6 +120,9 @@ def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_nam
         if 'zhirong' in pretrained_weights:
             state_dict = {k.replace("base_encoder.", ""): v for k, v in state_dict.items()}
             state_dict = {k.replace("head.", "head.mlp."): v for k, v in state_dict.items()}
+        if 'msn' in pretrained_weights:  # for msn
+            state_dict = state_dict['target_encoder']
+            # state_dict = {k.replace("target_encoder.", ""): v for k, v in state_dict.items()}
         if checkpoint_key is not None and checkpoint_key in state_dict:
             print(f"Take key {checkpoint_key} in provided checkpoint dict")
             state_dict = state_dict[checkpoint_key]
